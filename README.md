@@ -8,6 +8,9 @@ A desktop application for automating the DDA Sports booking process. This applic
 - Real-time automation process with visible browser window
 - Automatic CAPTCHA solving
 - Error handling and retry mechanisms
+- Profile management to save and reuse booking settings
+- Device authentication for security
+- Chrome profile integration to save login sessions and cookies
 - Desktop-only application (Windows, macOS, and Linux)
 
 ## Prerequisites
@@ -16,6 +19,7 @@ A desktop application for automating the DDA Sports booking process. This applic
 - npm (v6 or higher)
 - Chrome browser installed
 - Desktop computer (Windows, macOS, or Linux)
+- Internet connection (for authentication)
 
 ## Installation
 
@@ -40,10 +44,7 @@ A desktop application for automating the DDA Sports booking process. This applic
    ```bash
    npm run build
    ```
-5. Find the built application in the `dist` folder:
-   - Windows: `dist/win-unpacked/DDA Sports Booking.exe`
-   - macOS: `dist/mac/DDA Sports Booking.app`
-   - Linux: `dist/linux-unpacked/dda-sports-booking`
+5. Find the built application in the output folder
 
 ## Development
 
@@ -61,8 +62,6 @@ To create a distributable package:
 npm run build
 ```
 
-The built application will be available in the `dist` directory.
-
 ## Usage
 
 1. Launch the application on your desktop computer
@@ -72,9 +71,44 @@ The built application will be available in the `dist` directory.
 3. Enter the booking details:
    - Date (in DD/MM/YYYY format)
    - Court Number
-4. Click "Start Booking Process"
-5. Watch the automation process in the new window that opens
-6. Complete the payment process when prompted
+   - Time Slot
+4. Optionally enable "Use Chrome profile data" to save your login session
+5. Click "Start Booking Process" to begin, or save as a profile for later use
+6. Watch the automation process in the new window that opens
+7. Complete the payment process when prompted
+
+### Profile Management
+
+The application includes profile management capabilities:
+
+- **Save Profile**: Enter your booking details and save them as a named profile
+- **Load Profile**: Click on a saved profile to load its settings
+- **Edit Profile**: Update date, court number, and time slot for a saved profile
+- **Execute Profile**: Run the booking automation with a saved profile
+- **Delete Profile**: Remove a saved profile when no longer needed
+
+## Authentication System
+
+This application uses a device-based authentication system with centralized access control:
+
+- **Device Registration**: Each device generates a unique token based on hardware information and hostname
+- **One-time Registration**: Devices are registered in the database only once by their hostname
+- **Access Control**: Each device entry has a `userAccess` boolean field that can be toggled by administrators
+- **Access Revocation**: Administrators can revoke access to specific devices by setting `userAccess` to false
+- **Usage Tracking**: The system records the creation date and last login time for each device
+
+### For Administrators
+
+To manage user access:
+
+1. Access the MongoDB database (Cluster0)
+2. Navigate to the "AuthenticatedSystem" collection
+3. Find the device entry by hostname or deviceToken
+4. Update the `userAccess` field:
+   - `true` to allow the device to use the application
+   - `false` to revoke access
+
+This allows centralized management of which devices can run the automation without requiring users to reinstall or modify the application.
 
 ## Notes
 
@@ -93,11 +127,14 @@ If you encounter any issues:
 3. Verify your credentials are correct
 4. Ensure the date format is correct (DD/MM/YYYY)
 5. Check if the court number is available for the selected date
+6. If you see "Device authentication failed", contact the administrator
 
 ## Security
 
 - Credentials are only used locally on your device
-- No data is sent to external servers except for the DDA Sports website
+- Device tokens are securely stored in a MongoDB database
+- The Chrome profile option allows saving sessions between runs
+- No data is sent to external servers except for the DDA Sports website and authentication
 - The application runs entirely on your local machine
 
 ## License
