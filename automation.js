@@ -159,12 +159,12 @@ async function login(page, username, password) {
       const userTypeField = await page.$("#ddlUserType");
       const compNameField = await page.$("#ddlCompName");
 
-      if (!(await usernameField.evaluate((el) => el.value))) {
-        await page.type("#txtUserName", username);
-      }
-      if (!(await passwordField.evaluate((el) => el.value))) {
-        await page.type("#txtPassword", password);
-      }
+      await page.$eval("#txtUserName", (el) => (el.value = ""));
+      await page.type("#txtUserName", username);
+
+      await page.$eval("#txtPassword", (el) => (el.value = ""));
+      await page.type("#txtPassword", password);
+
       if (!(await userTypeField.evaluate((el) => el.value))) {
         await page.select("#ddlUserType", "LM");
       }
@@ -226,13 +226,16 @@ async function waitForAndSelectCourt(page, courtNumber, timeSlot) {
       // Wait for a short time to see if the element appears
       const courtSelector = await page.waitForSelector(
         `#MainContent_grdGameSlot_ddlCourtTable_${timeSlot}`,
-        { timeout: 2000 } // 2s second timeout
+        { timeout: 1500 } // 1.5s second timeout
       );
 
       if (courtSelector) {
         console.log(
           `[${automationId}] Court selector found, attempting to select court...`
         );
+        if (courtNumber.toString().length == 1) {
+          courtNumber = `${courtNumber} `;
+        }
         await Promise.all([
           page.select(
             `#MainContent_grdGameSlot_ddlCourtTable_${timeSlot}`,
@@ -249,8 +252,6 @@ async function waitForAndSelectCourt(page, courtNumber, timeSlot) {
         `[${automationId}] Court selection not available yet, retrying...`,
         error.message
       );
-      // Wait for 2 seconds before retrying
-      await new Promise((resolve) => setTimeout(resolve, 2000));
       continue; // Continue the loop
     }
   }
@@ -336,14 +337,24 @@ async function main() {
         "--no-sandbox",
         "--disable-setuid-sandbox",
         "--start-maximized",
-        `--user-data-dir=${userDataDir}`,
-        `--window-name=DDA-Sports-Booking-${automationId}`, // Add window name for identification
-        "--new-window", // Force new window
-        "--disable-site-isolation-trials", // Prevent potential isolation issues
-        "--disable-features=IsolateOrigins,site-per-process", // Additional isolation prevention
+        `--window-name=DDA-Sports-Booking-${automationId}`,
+        "--new-window",
+        "--disable-blink-features=AutomationControlled",
+        "--enable-features=NetworkServiceInProcess2",
+        "--password-store=basic",
+        "--enable-dom-distiller",
+        "--disable-features=TranslateUI",
+        "--disable-site-isolation-trials",
+        "--disable-features=IsolateOrigins,site-per-process",
+        // Add flags to enable autofill and password saving
+        "--enable-autofill-credit-card-upload",
+        "--enable-features=AutofillSaveCardDialogUnlabeledExpiration,AutofillEnableAccountInfo",
+        "--enable-features=PasswordImport",
       ],
       defaultViewport: null,
-      ignoreDefaultArgs: ["--enable-automation"], // Hide automation flags
+      ignoreDefaultArgs: ["--enable-automation"],
+      permissions: ["notifications", "geolocation", "camera", "microphone"],
+      executablePath: process.env.CHROME_EXECUTABLE_PATH || undefined,
     };
 
     // Add user data dir if using profile
@@ -359,17 +370,43 @@ async function main() {
 
     const page = await browser.newPage();
 
+    // Set normal Chrome properties to avoid detection
+    await page.evaluateOnNewDocument(() => {
+      // Overwrite the 'webdriver' property to prevent detection
+      Object.defineProperty(navigator, "webdriver", {
+        get: () => false,
+      });
+
+      // Overwrite the plugins array to include normal Chrome plugins
+      Object.defineProperty(navigator, "plugins", {
+        get: () => [1, 2, 3, 4, 5],
+      });
+
+      // Overwrite the languages property
+      Object.defineProperty(navigator, "languages", {
+        get: () => ["en-US", "en", "es"],
+      });
+
+      // Overwrite Chrome PDF viewer
+      window.chrome = {
+        runtime: {},
+        loadTimes: function () {},
+        csi: function () {},
+        app: {},
+      };
+    });
+
     // Modify User-Agent and Headers
     await page.setUserAgent(
       "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
     );
     await page.setExtraHTTPHeaders({
       "Accept-Language": "en-US,en;q=0.9",
-    });
-
-    // Enable stealth mode
-    await page.evaluateOnNewDocument(() => {
-      Object.defineProperty(navigator, "webdriver", { get: () => false });
+      Accept:
+        "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8",
+      "Accept-Encoding": "gzip, deflate, br",
+      Connection: "keep-alive",
+      "Upgrade-Insecure-Requests": "1",
     });
 
     console.log(`[${automationId}] Navigating to login page...`);
@@ -434,8 +471,64 @@ async function main() {
       page.waitForNavigation({ waitUntil: "networkidle0" }),
     ]);
 
+    // Get the current URL (payment gateway URL)
+    const paymentUrl = page.url();
+    console.log(`[${automationId}] Payment URL: ${paymentUrl}`);
+
+    // Show completion dialog
+    await page.evaluate((url) => {
+      // Create a styled popup element
+      const popup = document.createElement("div");
+      popup.style.position = "fixed";
+      popup.style.top = "50%";
+      popup.style.left = "50%";
+      popup.style.transform = "translate(-50%, -50%)";
+      popup.style.backgroundColor = "white";
+      popup.style.padding = "20px";
+      popup.style.borderRadius = "10px";
+      popup.style.boxShadow = "0 4px 20px rgba(0,0,0,0.2)";
+      popup.style.zIndex = "9999";
+      popup.style.maxWidth = "500px";
+      popup.style.width = "90%";
+      popup.style.fontFamily = "Arial, sans-serif";
+
+      popup.innerHTML = `
+        <h2 style="color: #4CAF50; margin-top: 0;">Booking Successful!</h2>
+        <p>Your court booking has been completed successfully.</p>
+       
+        <p>Due to payment gateway security restrictions, you may need to click on the button below to complete payment.</p>
+        <p>You can:</p>
+        <ol>
+          <li>Continue here (if the payment form loads correctly)</li>
+        </ol>
+        <div style="display: flex; justify-content: space-between; margin-top: 20px;">
+          <button id="openBrowser" style="background: #4CAF50; color: white; border: none; padding: 10px 15px; border-radius: 5px; cursor: pointer;">Open in Browser</button>
+        </div>
+      `;
+
+      document.body.appendChild(popup);
+
+      // Add event listener for opening in browser
+      document.getElementById("openBrowser").addEventListener("click", () => {
+        // Try to use the electron IPC if available
+        if (window.require) {
+          try {
+            const { ipcRenderer } = window.require("electron");
+            ipcRenderer.send("open-external-url", url);
+          } catch (e) {
+            // Fallback to regular window.open if not in Electron context
+            window.open(url, "_blank");
+          }
+        } else {
+          // Regular window.open as fallback
+          window.open(url, "_blank");
+        }
+        popup.remove();
+      });
+    }, paymentUrl);
+
     console.log(
-      `[${automationId}] Booking process completed! Window will remain open for payment.`
+      `[${automationId}] Booking process completed! You can complete payment in this window or your regular browser.`
     );
     await new Promise(() => {}); // Keep the window open
   } catch (error) {

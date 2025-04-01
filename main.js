@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain } = require("electron");
+const { app, BrowserWindow, ipcMain, shell } = require("electron");
 const path = require("path");
 const { spawn } = require("child_process");
 const {
@@ -211,43 +211,73 @@ ipcMain.on("start-booking", async (event, formData) => {
       Math.random() * 10000
     )}`;
 
-    // Define Chrome user data directory - use a unique directory for each run
+    // Define Chrome user data directory - use a persistent profile instead of temporary ones
     const userDataDir = formData.useChromePRofile
-      ? path.join(app.getPath("userData"), "ChromeProfiles", automationId)
+      ? path.join(app.getPath("userData"), "PersistentChromeProfile")
       : "";
+
+    // Try to detect Chrome executable path
+    let chromeExecutablePath = null;
+    try {
+      // For Windows
+      if (process.platform === "win32") {
+        const possiblePaths = [
+          "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
+          "C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe",
+          process.env.LOCALAPPDATA +
+            "\\Google\\Chrome\\Application\\chrome.exe",
+        ];
+
+        for (const possiblePath of possiblePaths) {
+          if (fs.existsSync(possiblePath)) {
+            chromeExecutablePath = possiblePath;
+            console.log(`Found Chrome executable at: ${chromeExecutablePath}`);
+            break;
+          }
+        }
+      }
+      // For macOS
+      else if (process.platform === "darwin") {
+        chromeExecutablePath =
+          "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
+        if (!fs.existsSync(chromeExecutablePath)) {
+          chromeExecutablePath = null;
+        }
+      }
+      // For Linux
+      else if (process.platform === "linux") {
+        const possiblePaths = [
+          "/usr/bin/google-chrome",
+          "/usr/bin/google-chrome-stable",
+        ];
+
+        for (const possiblePath of possiblePaths) {
+          if (fs.existsSync(possiblePath)) {
+            chromeExecutablePath = possiblePath;
+            break;
+          }
+        }
+      }
+    } catch (error) {
+      console.error("Error detecting Chrome path:", error);
+    }
 
     // If using Chrome profile and a profile directory exists, copy the base profile
     if (formData.useChromePRofile) {
       const fs = require("fs-extra");
-      const baseProfileDir = path.join(
-        app.getPath("userData"),
-        "ChromeProfile"
-      );
 
-      // Create the profiles directory if it doesn't exist
-      if (
-        !fs.existsSync(path.join(app.getPath("userData"), "ChromeProfiles"))
-      ) {
-        fs.mkdirSync(path.join(app.getPath("userData"), "ChromeProfiles"), {
-          recursive: true,
-        });
-      }
-
-      // If base profile exists, copy it to the new unique profile directory
-      if (fs.existsSync(baseProfileDir)) {
+      // Create the persistent profile directory if it doesn't exist
+      if (!fs.existsSync(userDataDir)) {
         try {
-          fs.copySync(baseProfileDir, userDataDir);
-          console.log(
-            `Copied base Chrome profile to unique directory: ${userDataDir}`
+          fs.mkdirSync(userDataDir, { recursive: true });
+          console.log(`Created persistent Chrome profile at: ${userDataDir}`);
+        } catch (mkdirError) {
+          console.error(
+            `Failed to create Chrome profile directory: ${mkdirError.message}`
           );
-        } catch (copyError) {
-          console.error(`Failed to copy Chrome profile: ${copyError.message}`);
-          // Continue without profile if copy fails
         }
       } else {
-        console.log(
-          `No base Chrome profile found at ${baseProfileDir}, will create new profile`
-        );
+        console.log(`Using existing Chrome profile at: ${userDataDir}`);
       }
     }
 
@@ -264,6 +294,7 @@ ipcMain.on("start-booking", async (event, formData) => {
         CHROME_USER_DATA_DIR: userDataDir,
         DEVICE_TOKEN: tokenToUse, // Pass token to automation script
         AUTOMATION_ID: automationId, // Pass unique ID to automation script
+        CHROME_EXECUTABLE_PATH: chromeExecutablePath || "", // Pass Chrome executable path
       },
     });
 
@@ -277,29 +308,6 @@ ipcMain.on("start-booking", async (event, formData) => {
 
     automationScript.on("close", (code) => {
       console.log(`Automation script exited with code ${code}`);
-
-      // Clean up the temporary profile directory if it was created
-      if (formData.useChromePRofile && userDataDir) {
-        try {
-          const fs = require("fs-extra");
-          // Only remove if it's in the ChromeProfiles directory (safety check)
-          if (userDataDir.includes("ChromeProfiles")) {
-            fs.remove(userDataDir)
-              .then(() =>
-                console.log(
-                  `Removed temporary Chrome profile at ${userDataDir}`
-                )
-              )
-              .catch((err) =>
-                console.error(`Failed to remove Chrome profile: ${err.message}`)
-              );
-          }
-        } catch (error) {
-          console.error(
-            `Error cleaning up profile directory: ${error.message}`
-          );
-        }
-      }
 
       if (code !== 0) {
         event.reply("booking-error", `Automation failed with code ${code}`);
@@ -332,4 +340,23 @@ ipcMain.handle("get-profiles", (event) => {
 // Alternate sync method that doesn't require a Promise (for simpler usage)
 ipcMain.on("get-profiles", (event) => {
   event.returnValue = global.store ? global.store.get("profiles", []) : [];
+});
+
+// Add handler for opening URLs in default browser
+ipcMain.on("open-external-url", (event, url) => {
+  if (url && typeof url === "string" && url.startsWith("http")) {
+    console.log(`Opening external URL in default browser: ${url}`);
+    shell
+      .openExternal(url)
+      .then(() => {
+        event.reply("open-url-success", true);
+      })
+      .catch((error) => {
+        console.error(`Failed to open URL: ${error.message}`);
+        event.reply("open-url-success", false);
+      });
+  } else {
+    console.error(`Invalid URL: ${url}`);
+    event.reply("open-url-success", false);
+  }
 });
