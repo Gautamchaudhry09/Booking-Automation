@@ -1,0 +1,34 @@
+name: Build Electron App
+
+on:
+  push:
+    branches:
+      - main # Change if needed
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: windows-latest # Runs on a Windows machine
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v3
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: 18 # Adjust based on your project needs
+
+      - name: Install Dependencies
+        run: npm install
+
+      - name: Run Batch Script
+        run: setup-booking-automation.bat
+
+      - name: Upload Build Artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: Electron-App
+          path: dist/ # Change this if your build output is in another folder
