@@ -257,6 +257,48 @@ async function waitForAndSelectCourt(page, courtNumber, timeSlot) {
   }
 }
 
+async function captureBookingScreenshot(page, automationId) {
+  const selector = "#litFacilityBook";
+
+  // Wait for the element to appear
+  await page.waitForSelector(selector);
+
+  // Select the element
+  const element = await page.$(selector);
+
+  if (element) {
+    // Create the "booking details" folder if it doesn't exist
+    const folderPath = "booking_details";
+    if (!fs.existsSync(folderPath)) {
+      fs.mkdirSync(folderPath);
+    }
+
+    // Save the screenshot inside the "booking details" folder
+    const screenshotPath = `${folderPath}/booking_details_${automationId}.png`;
+    await element.screenshot({ path: screenshotPath });
+
+    // Also get screenshot as base64 for inline display
+    const screenshotBuffer = await element.screenshot();
+    const base64Screenshot = screenshotBuffer.toString("base64");
+
+    console.log(`Screenshot saved at ${screenshotPath}`);
+    return base64Screenshot;
+  } else {
+    console.log("Element not found");
+    return null;
+  }
+}
+
+async function enterFinalCaptcha(page) {
+  console.log(`Processing final CAPTCHA...`);
+  const captchaElement = await page.$("#MainContent_imgCaptchaImage");
+  const captchaUrl = await captchaElement.evaluate((img) => img.src);
+  const captchaText = new URL(captchaUrl).searchParams.get("txt");
+
+  console.log(`Extracted CAPTCHA:`, captchaText);
+  await page.type("#MainContent_txtCpCode", captchaText.trim());
+}
+
 async function main() {
   const automationId = process.env.AUTOMATION_ID || `auto-${Date.now()}`;
 
@@ -446,13 +488,11 @@ async function main() {
 
     await waitForAndSelectCourt(page, courtNumber, timeSlot);
 
-    console.log(`[${automationId}] Processing final CAPTCHA...`);
-    const captchaElement = await page.$("#MainContent_imgCaptchaImage");
-    const captchaUrl = await captchaElement.evaluate((img) => img.src);
-    const captchaText = new URL(captchaUrl).searchParams.get("txt");
-
-    console.log(`[${automationId}] Extracted CAPTCHA:`, captchaText);
-    await page.type("#MainContent_txtCpCode", captchaText.trim());
+    // Capture screenshot and enter captcha in parallel
+    const [base64Screenshot] = await Promise.all([
+      captureBookingScreenshot(page, automationId),
+      enterFinalCaptcha(page),
+    ]);
 
     page.on("dialog", async (dialog) => {
       await dialog.accept();
@@ -476,26 +516,34 @@ async function main() {
     console.log(`[${automationId}] Payment URL: ${paymentUrl}`);
 
     // Show completion dialog
-    await page.evaluate((url) => {
-      // Create a styled popup element
-      const popup = document.createElement("div");
-      popup.style.position = "fixed";
-      popup.style.top = "50%";
-      popup.style.left = "50%";
-      popup.style.transform = "translate(-50%, -50%)";
-      popup.style.backgroundColor = "white";
-      popup.style.padding = "20px";
-      popup.style.borderRadius = "10px";
-      popup.style.boxShadow = "0 4px 20px rgba(0,0,0,0.2)";
-      popup.style.zIndex = "9999";
-      popup.style.maxWidth = "500px";
-      popup.style.width = "90%";
-      popup.style.fontFamily = "Arial, sans-serif";
+    await page.evaluate(
+      (url, screenshot) => {
+        // Create a styled popup element
+        const popup = document.createElement("div");
+        popup.style.position = "fixed";
+        popup.style.top = "50%";
+        popup.style.left = "50%";
+        popup.style.transform = "translate(-50%, -50%)";
+        popup.style.backgroundColor = "white";
+        popup.style.padding = "20px";
+        popup.style.borderRadius = "10px";
+        popup.style.boxShadow = "0 4px 20px rgba(0,0,0,0.2)";
+        popup.style.zIndex = "9999";
+        popup.style.maxWidth = "500px";
+        popup.style.width = "90%";
+        popup.style.fontFamily = "Arial, sans-serif";
 
-      popup.innerHTML = `
+        // Add screenshot if available
+        const screenshotHtml = screenshot
+          ? `<div style="margin: 15px 0;">
+            <img src="data:image/png;base64,${screenshot}" alt="Booking Details" style="max-width: 100%; border: 1px solid #ccc; border-radius: 5px;" />
+           </div>`
+          : "";
+
+        popup.innerHTML = `
         <h2 style="color: #4CAF50; margin-top: 0;">Booking Successful!</h2>
         <p>Your court booking has been completed successfully.</p>
-       
+        ${screenshotHtml}
         <p>Due to payment gateway security restrictions, you may need to click on the button below to complete payment.</p>
         <p>You can:</p>
         <ol>
@@ -506,26 +554,29 @@ async function main() {
         </div>
       `;
 
-      document.body.appendChild(popup);
+        document.body.appendChild(popup);
 
-      // Add event listener for opening in browser
-      document.getElementById("openBrowser").addEventListener("click", () => {
-        // Try to use the electron IPC if available
-        if (window.require) {
-          try {
-            const { ipcRenderer } = window.require("electron");
-            ipcRenderer.send("open-external-url", url);
-          } catch (e) {
-            // Fallback to regular window.open if not in Electron context
+        // Add event listener for opening in browser
+        document.getElementById("openBrowser").addEventListener("click", () => {
+          // Try to use the electron IPC if available
+          if (window.require) {
+            try {
+              const { ipcRenderer } = window.require("electron");
+              ipcRenderer.send("open-external-url", url);
+            } catch (e) {
+              // Fallback to regular window.open if not in Electron context
+              window.open(url, "_blank");
+            }
+          } else {
+            // Regular window.open as fallback
             window.open(url, "_blank");
           }
-        } else {
-          // Regular window.open as fallback
-          window.open(url, "_blank");
-        }
-        popup.remove();
-      });
-    }, paymentUrl);
+          popup.remove();
+        });
+      },
+      paymentUrl,
+      base64Screenshot
+    );
 
     console.log(
       `[${automationId}] Booking process completed! You can complete payment in this window or your regular browser.`
