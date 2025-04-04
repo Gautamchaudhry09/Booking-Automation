@@ -211,9 +211,13 @@ ipcMain.on("start-booking", async (event, formData) => {
       Math.random() * 10000
     )}`;
 
-    // Define Chrome user data directory - use a persistent profile instead of temporary ones
+    // Define Chrome user data directory - use a persistent profile with unique identifier
     const userDataDir = formData.useChromePRofile
-      ? path.join(app.getPath("userData"), "PersistentChromeProfile")
+      ? path.join(
+          app.getPath("userData"),
+          "PersistentChromeProfiles",
+          `profile-${automationId}`
+        )
       : "";
 
     // Try to detect Chrome executable path

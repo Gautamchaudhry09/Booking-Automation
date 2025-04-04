@@ -302,6 +302,9 @@ async function enterFinalCaptcha(page) {
 async function main() {
   const automationId = process.env.AUTOMATION_ID || `auto-${Date.now()}`;
 
+  // Generate a random port between 51000 and 59000 for this automation instance
+  const debugPort = Math.floor(Math.random() * 8000) + 51000;
+
   try {
     // First verify device authentication
     const isAuthenticated = await verifyDeviceAuthentication();
@@ -367,12 +370,63 @@ async function main() {
       );
     }
 
+    // Initialize Express server for URL opening
+    let expressPort;
+    try {
+      const express = require("express");
+      const app = express();
+      expressPort = debugPort + 1; // Use a port derived from the debug port
+
+      // Configure Express server
+      app.get("/open-url", (req, res) => {
+        const url = req.query.url;
+        if (!url) {
+          return res.status(400).send("URL is required");
+        }
+
+        try {
+          // Determine the platform and use the appropriate command
+          const platform = process.platform;
+          let command;
+
+          if (platform === "win32") {
+            command = `start "${url}"`;
+          } else if (platform === "darwin") {
+            command = `open "${url}"`;
+          } else {
+            command = `xdg-open "${url}"`;
+          }
+
+          // Execute the command
+          require("child_process").exec(command);
+          res.send("URL opened successfully");
+        } catch (error) {
+          console.error("Error opening URL:", error);
+          res.status(500).send("Failed to open URL");
+        }
+      });
+
+      // Start the server on the unique port
+      const server = app.listen(expressPort, () => {
+        console.log(
+          `[${automationId}] URL opener service running on port ${expressPort}`
+        );
+      });
+
+      // Avoid preventing the process from exiting
+      server.unref();
+    } catch (err) {
+      console.log(
+        `[${automationId}] URL opener service not initialized: ${err.message}`
+      );
+      expressPort = null;
+    }
+
     console.log(
-      `[${automationId}] Launching browser with profile:`,
-      useProfile ? userDataDir : "none"
+      `[${automationId}] Chrome profile usage:`,
+      useProfile ? "Yes" : "No"
     );
 
-    // Browser launch options
     const launchOptions = {
       headless: false,
       args: [
@@ -392,6 +446,8 @@ async function main() {
         "--enable-autofill-credit-card-upload",
         "--enable-features=AutofillSaveCardDialogUnlabeledExpiration,AutofillEnableAccountInfo",
         "--enable-features=PasswordImport",
+        // Add a unique remote debugging port for this instance
+        `--remote-debugging-port=${debugPort}`,
       ],
       defaultViewport: null,
       ignoreDefaultArgs: ["--enable-automation"],
@@ -517,7 +573,7 @@ async function main() {
 
     // Show completion dialog
     await page.evaluate(
-      (url, screenshot) => {
+      (url, automationId, screenshot, expressPort) => {
         // Create a styled popup element
         const popup = document.createElement("div");
         popup.style.position = "fixed";
@@ -556,6 +612,22 @@ async function main() {
 
         document.body.appendChild(popup);
 
+        // Helper function to open URL via our local server
+        function openUrlWithLocalServer(url) {
+          fetch(
+            `http://localhost:${expressPort}/open-url?url=${encodeURIComponent(
+              url
+            )}`
+          )
+            .then((response) => response.text())
+            .then((data) => console.log(data))
+            .catch((error) => {
+              console.error("Error:", error);
+              // Fallback to regular window.open
+              window.open(url, "_blank");
+            });
+        }
+
         // Add event listener for opening in browser
         document.getElementById("openBrowser").addEventListener("click", () => {
           // Try to use the electron IPC if available
@@ -564,18 +636,19 @@ async function main() {
               const { ipcRenderer } = window.require("electron");
               ipcRenderer.send("open-external-url", url);
             } catch (e) {
-              // Fallback to regular window.open if not in Electron context
-              window.open(url, "_blank");
+              // Try our local server as first fallback
+              openUrlWithLocalServer(url);
             }
           } else {
-            // Regular window.open as fallback
-            window.open(url, "_blank");
+            // Try our local server first
+            openUrlWithLocalServer(url);
           }
-          popup.remove();
         });
       },
       paymentUrl,
-      base64Screenshot
+      automationId,
+      base64Screenshot,
+      expressPort
     );
 
     console.log(
