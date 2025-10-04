@@ -10,7 +10,7 @@ import axios from 'axios';
 async function solveCaptchaWithGemini(imagePath) {
   try {
     // Read service account file
-    const serviceAccount = JSON.parse(fs.readFileSync('service-account.json', 'utf8'));
+    const serviceAccount = JSON.parse(process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON);
 
     // Initialize GoogleAuth
     const auth = new GoogleAuth({
