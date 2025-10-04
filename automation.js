@@ -3,6 +3,7 @@ const Tesseract = require("tesseract.js");
 const path = require("path");
 const mongoose = require("mongoose");
 const fs = require("fs");
+const { solveCaptchaWithGemini } = require("./gemini-captcha-solver");
 
 // Device authentication verification
 async function verifyDeviceAuthentication() {
@@ -129,7 +130,14 @@ async function getCaptchaText(page, queryString) {
 async function checkCaptchaError(page) {
   const automationId = process.env.AUTOMATION_ID || "auto-unknown";
   const errorMsg = await retryAction(async () => {
-    const element = await page.$("#lblMsg");
+    const element = await page.$("#swal2-html-container");
+    const confirmButton = await page.$(".swal2-confirm.swal2-styled");
+    if (confirmButton) {
+      console.log("Confirm button appeared, clicking it...");
+      await confirmButton.click();
+    } else {
+      console.log("Confirm button not found, continuing...");
+    }
     return element ? await element.evaluate((el) => el.textContent) : null;
   });
   if (errorMsg) {
@@ -174,7 +182,10 @@ async function login(page, username, password) {
       await page.$eval("#txtCapcha", (el) => (el.value = ""));
       await page.type("#txtCapcha", sum.toString());
 
-      await Promise.all([page.click("#btnLogin"), page.waitForNavigation()]);
+      await Promise.all([
+        page.click("#btnLogin"),
+        page.waitForNavigation({ timeout: 300000 }),
+      ]);
 
       if (await checkCaptchaError(page)) {
         console.log(
@@ -216,7 +227,10 @@ async function waitForAndSelectCourt(page, courtNumber, timeSlot) {
       console.log(`[${automationId}] Searching for courts...`);
       await Promise.all([
         retryAction(async () => page.click("#MainContent_btnSearch")),
-        page.waitForNavigation({ waitUntil: "domcontentloaded" }),
+        page.waitForNavigation({
+          waitUntil: "domcontentloaded",
+          timeout: 300000,
+        }),
       ]);
 
       console.log(
@@ -242,7 +256,7 @@ async function waitForAndSelectCourt(page, courtNumber, timeSlot) {
             courtNumber
           ),
           page.click(`#MainContent_grdGameSlot_lnkEdit_${timeSlot}`),
-          page.waitForNavigation(),
+          page.waitForNavigation({ timeout: 300000 }),
         ]);
         console.log(`[${automationId}] Court selected successfully!`);
         return; // Exit the loop if successful
@@ -261,7 +275,7 @@ async function captureBookingScreenshot(page, automationId) {
   const selector = "#litFacilityBook";
 
   // Wait for the element to appear
-  await page.waitForSelector(selector);
+  await page.waitForSelector(selector, { timeout: 300000 });
 
   // Select the element
   const element = await page.$(selector);
@@ -289,27 +303,222 @@ async function captureBookingScreenshot(page, automationId) {
   }
 }
 
-async function enterFinalCaptcha(page) {
+async function enterFinalCaptcha(page, captchaImagePath, i) {
   console.log(`Processing final CAPTCHA...`);
-  const captchaElement = await page.$("#MainContent_imgCaptchaImage");
-  const captchaUrl = await captchaElement.evaluate((img) => img.src);
-  const captchaText = new URL(captchaUrl).searchParams.get("txt");
+
+  const captchaText = await retryAction(
+    async () => await solveCaptchaWithGemini(captchaImagePath)
+  );
 
   console.log(`Extracted CAPTCHA:`, captchaText);
-  await page.type("#MainContent_txtCpCode", captchaText.trim());
+  if (captchaText) {
+    await page.type("#MainContent_txtCpCode", captchaText.trim());
+  } else {
+    if (i > 3) {
+      console.log(`Failed to solve captcha after 3 retries`);
+      return "1234";
+    }
+    console.log(`Failed to solve captcha, retrying...`);
+    await enterFinalCaptcha(page, captchaImagePath, i + 1);
+  }
+}
+
+async function getFinalCaptchaPath(page, automationId) {
+  // Create captcha folder if it doesn't exist
+  const finalCaptchaDir = path.join(__dirname, "finalCaptcha");
+
+  if (!fs.existsSync(finalCaptchaDir)) {
+    fs.mkdirSync(finalCaptchaDir, { recursive: true });
+    console.log(
+      `[${automationId}] Created finalCaptcha directory at ${finalCaptchaDir}`
+    );
+  }
+
+  const captchaElement = await page.$("#MainContent_imgCaptchaImage");
+  if (!captchaElement) {
+    throw new Error("final CAPTCHA element not found");
+  }
+
+  const finalCaptchaPath = path.join(
+    finalCaptchaDir,
+    `captcha-${automationId}.png`
+  );
+  await captchaElement.screenshot({ path: finalCaptchaPath });
+  return finalCaptchaPath;
+}
+
+async function confirmBooking(
+  page,
+  automationId,
+  maxRetries = 4,
+) {
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      console.log(
+        `[${automationId}] Booking confirmation attempt ${attempt}/${maxRetries}`
+      );
+
+      // Press Tab twice with 300ms gap, then Enter
+      await new Promise((resolve) => setTimeout(resolve, 500)); // Wait 1s
+      await page.keyboard.press("Tab");
+      await new Promise((resolve) => setTimeout(resolve, 500)); // Wait 1s
+      await page.keyboard.press("Tab");
+      await new Promise((resolve) => setTimeout(resolve, 500)); // Wait 1s
+      await page.keyboard.press("Enter");
+
+      // Wait a bit for the page to process
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+
+      // Check if captcha error element is present (indicating incorrect captcha)
+      const captchaErrorElement = await page.$("#genericModalBody");
+
+      if (captchaErrorElement) {
+        console.log(`[${automationId}] Captcha error detected`);
+
+        if (attempt < maxRetries) {
+          // Press Tab twice with 300ms gap, then Enter
+          await new Promise((resolve) => setTimeout(resolve, 500)); // Wait 1s
+          await page.keyboard.press("Tab");
+          await new Promise((resolve) => setTimeout(resolve, 500)); // Wait 1s
+          await page.keyboard.press("Tab");
+          await new Promise((resolve) => setTimeout(resolve, 500)); // Wait 1s
+          await page.keyboard.press("Enter");
+          console.log(`[${automationId}] Retrying booking confirmation...`);
+
+          // Clear the captcha field and re-enter
+          await page.$eval("#MainContent_txtCpCode", (el) => (el.value = ""));
+          let captchaImagePath = await getFinalCaptchaPath(page, automationId);
+          // Get new captcha and solve it
+          await enterFinalCaptcha(page, captchaImagePath, 0);
+
+          // Continue to next attempt
+          continue;
+        } else {
+          throw new Error(
+            `Captcha verification failed after ${maxRetries} attempts`
+          );
+        }
+      } else {
+        // No error element found, booking confirmation successful
+        console.log(
+          `[${automationId}] Booking confirmation successful on attempt ${attempt}`
+        );
+        return true;
+      }
+    } catch (error) {
+      console.error(
+        `[${automationId}] Booking confirmation attempt ${attempt} failed:`,
+        error.message
+      );
+
+      if (attempt === maxRetries) {
+        throw error;
+      }
+
+      // Wait before retry
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+    }
+  }
+
+  return false;
+}
+
+async function launchBrowser(useProfile, userDataDir, automationId) {
+  // Browser launch options with fallback
+  const launchOptions = {
+    headless: false,
+    args: [
+      "--no-sandbox",
+      "--disable-setuid-sandbox",
+      "--disable-dev-shm-usage",
+      "--disable-accelerated-2d-canvas",
+      "--no-first-run",
+      "--no-zygote",
+      "--disable-gpu",
+      "--start-maximized",
+      `--window-name=DDA-Sports-Booking-${automationId}`,
+      "--disable-blink-features=AutomationControlled",
+      "--disable-features=TranslateUI",
+      "--disable-site-isolation-trials",
+      "--disable-features=IsolateOrigins,site-per-process",
+      "--enable-autofill-credit-card-upload",
+      "--enable-features=AutofillSaveCardDialogUnlabeledExpiration,AutofillEnableAccountInfo",
+      "--enable-features=PasswordImport",
+    ],
+    defaultViewport: null,
+    ignoreDefaultArgs: ["--enable-automation"],
+    executablePath:
+      process.env.CHROME_EXECUTABLE_PATH ||
+      "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+  };
+
+  // Add user data dir if using profile
+  if (useProfile && userDataDir) {
+    console.log(
+      `[${automationId}] Using Chrome profile directory:`,
+      userDataDir
+    );
+    launchOptions.userDataDir = userDataDir;
+  }
+
+  let browser;
+  try {
+    console.log(`[${automationId}] Attempting to launch browser...`);
+    browser = await puppeteer.launch(launchOptions);
+    console.log(`[${automationId}] Browser launched successfully`);
+  } catch (error) {
+    console.error(
+      `[${automationId}] Failed to launch browser with current options:`,
+      error.message
+    );
+
+    // Try with minimal options as fallback
+    console.log(`[${automationId}] Trying fallback launch options...`);
+    const fallbackOptions = {
+      headless: false,
+      args: [
+        "--no-sandbox",
+        "--disable-setuid-sandbox",
+        "--disable-dev-shm-usage",
+        "--disable-gpu",
+      ],
+      executablePath:
+        process.env.CHROME_EXECUTABLE_PATH ||
+        "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+    };
+
+    try {
+      browser = await puppeteer.launch(fallbackOptions);
+      console.log(`[${automationId}] Browser launched with fallback options`);
+    } catch (fallbackError) {
+      console.error(
+        `[${automationId}] Fallback launch also failed:`,
+        fallbackError.message
+      );
+      throw new Error(`Failed to launch browser: ${fallbackError.message}`);
+    }
+  }
+  return browser;
 }
 
 async function main() {
   const automationId = process.env.AUTOMATION_ID || `auto-${Date.now()}`;
 
   try {
-    // First verify device authentication
-    const isAuthenticated = await verifyDeviceAuthentication();
-    if (!isAuthenticated) {
-      console.error(
-        `[${automationId}] Device authentication failed. Not authorized to run automation.`
+    // Skip device authentication for server/mobile mode
+    if (automationId.startsWith("mobile-")) {
+      console.log(
+        `[${automationId}] Running in server mode - skipping device authentication`
       );
-      process.exit(1);
+    } else {
+      // First verify device authentication for desktop mode
+      const isAuthenticated = await verifyDeviceAuthentication();
+      if (!isAuthenticated) {
+        console.error(
+          `[${automationId}] Device authentication failed. Not authorized to run automation.`
+        );
+        process.exit(1);
+      }
     }
 
     console.log(
@@ -372,45 +581,12 @@ async function main() {
       useProfile ? userDataDir : "none"
     );
 
-    // Browser launch options
-    const launchOptions = {
-      headless: false,
-      args: [
-        "--no-sandbox",
-        "--disable-setuid-sandbox",
-        "--start-maximized",
-        `--window-name=DDA-Sports-Booking-${automationId}`,
-        "--new-window",
-        "--disable-blink-features=AutomationControlled",
-        "--enable-features=NetworkServiceInProcess2",
-        "--password-store=basic",
-        "--enable-dom-distiller",
-        "--disable-features=TranslateUI",
-        "--disable-site-isolation-trials",
-        "--disable-features=IsolateOrigins,site-per-process",
-        // Add flags to enable autofill and password saving
-        "--enable-autofill-credit-card-upload",
-        "--enable-features=AutofillSaveCardDialogUnlabeledExpiration,AutofillEnableAccountInfo",
-        "--enable-features=PasswordImport",
-      ],
-      defaultViewport: null,
-      ignoreDefaultArgs: ["--enable-automation"],
-      permissions: ["notifications", "geolocation", "camera", "microphone"],
-      executablePath: process.env.CHROME_EXECUTABLE_PATH || undefined,
-    };
-
-    // Add user data dir if using profile
-    if (useProfile && userDataDir) {
-      console.log(
-        `[${automationId}] Using Chrome profile directory:`,
-        userDataDir
-      );
-      launchOptions.userDataDir = userDataDir;
-    }
-
-    const browser = await puppeteer.launch(launchOptions);
-
+    let browser = await launchBrowser(useProfile, userDataDir, automationId);
     const page = await browser.newPage();
+
+    // Set longer timeouts to prevent window from closing
+    page.setDefaultTimeout(300000); // 5 minutes
+    page.setDefaultNavigationTimeout(300000); // 5 minutes
 
     // Set normal Chrome properties to avoid detection
     await page.evaluateOnNewDocument(() => {
@@ -454,6 +630,7 @@ async function main() {
     console.log(`[${automationId}] Navigating to login page...`);
     await page.goto("https://ddasports.com/app/", {
       waitUntil: "domcontentloaded",
+      timeout: 300000, // 5 minutes
     });
 
     await login(page, username, password);
@@ -488,32 +665,41 @@ async function main() {
 
     await waitForAndSelectCourt(page, courtNumber, timeSlot);
 
+    const captchaImagePath = await getFinalCaptchaPath(page, automationId);
     // Capture screenshot and enter captcha in parallel
+    await captureBookingScreenshot(page, automationId);
     const [base64Screenshot] = await Promise.all([
-      captureBookingScreenshot(page, automationId),
-      enterFinalCaptcha(page),
+      enterFinalCaptcha(page, captchaImagePath, 0),
+      new Promise((resolve) => setTimeout(resolve, 300)), // Wait 300ms
     ]);
-
-    page.on("dialog", async (dialog) => {
-      await dialog.accept();
-    });
 
     console.log(`[${automationId}] Saving booking...`);
     await Promise.all([
       page.click("#MainContent_btnSave"),
-      page.waitForNavigation({ waitUntil: "networkidle0" }),
+      // page.waitForNavigation({ waitUntil: "networkidle0", timeout: 300000 }),
     ]);
+
+    // Confirm booking with retry logic for captcha errors
+    await confirmBooking(page, automationId);
 
     console.log(`[${automationId}] Accepting terms and conditions...`);
     await Promise.all([
       retryAction(() => page.click("#chkTermCondition")),
       retryAction(() => page.click("button.btn.btn-success")),
-      page.waitForNavigation({ waitUntil: "networkidle0" }),
+      page.waitForNavigation({ waitUntil: "networkidle0", timeout: 300000 }),
     ]);
 
     // Get the current URL (payment gateway URL)
     const paymentUrl = page.url();
     console.log(`[${automationId}] Payment URL: ${paymentUrl}`);
+
+    // If running from server, output the payment URL in a format the server can parse
+    if (
+      process.env.AUTOMATION_ID &&
+      process.env.AUTOMATION_ID.startsWith("mobile-")
+    ) {
+      console.log(`PAYMENT_URL_OUTPUT:${paymentUrl}`);
+    }
 
     // Show completion dialog
     await page.evaluate(

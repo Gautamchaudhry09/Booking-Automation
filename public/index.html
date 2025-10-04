@@ -1,0 +1,399 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DDA Sports Booking - Mobile</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 400px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #4CAF50 0%, #45a049 100%);
+            color: white;
+            padding: 30px 20px;
+            text-align: center;
+        }
+
+        .header h1 {
+            font-size: 24px;
+            margin-bottom: 10px;
+        }
+
+        .header p {
+            opacity: 0.9;
+            font-size: 14px;
+        }
+
+        .form-container {
+            padding: 30px 20px;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 600;
+            color: #333;
+            font-size: 14px;
+        }
+
+        .form-group input,
+        .form-group select {
+            width: 100%;
+            padding: 15px;
+            border: 2px solid #e1e5e9;
+            border-radius: 10px;
+            font-size: 16px;
+            transition: border-color 0.3s ease;
+            background: #f8f9fa;
+        }
+
+        .form-group input:focus,
+        .form-group select:focus {
+            outline: none;
+            border-color: #4CAF50;
+            background: white;
+        }
+
+        .checkbox-group {
+            display: flex;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+
+        .checkbox-group input[type="checkbox"] {
+            width: auto;
+            margin-right: 10px;
+            transform: scale(1.2);
+        }
+
+        .checkbox-group label {
+            margin-bottom: 0;
+            font-weight: normal;
+        }
+
+        .btn {
+            width: 100%;
+            padding: 15px;
+            background: linear-gradient(135deg, #4CAF50 0%, #45a049 100%);
+            color: white;
+            border: none;
+            border-radius: 10px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s ease;
+        }
+
+        .btn:hover {
+            transform: translateY(-2px);
+        }
+
+        .btn:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .status-container {
+            margin-top: 20px;
+            padding: 20px;
+            border-radius: 10px;
+            display: none;
+        }
+
+        .status-container.show {
+            display: block;
+        }
+
+        .status-container.running {
+            background: #e3f2fd;
+            border: 2px solid #2196F3;
+        }
+
+        .status-container.completed {
+            background: #e8f5e8;
+            border: 2px solid #4CAF50;
+        }
+
+        .status-container.failed {
+            background: #ffebee;
+            border: 2px solid #f44336;
+        }
+
+        .status-title {
+            font-weight: 600;
+            margin-bottom: 10px;
+        }
+
+        .status-message {
+            font-size: 14px;
+            line-height: 1.5;
+        }
+
+        .payment-url {
+            margin-top: 15px;
+            padding: 15px;
+            background: white;
+            border-radius: 8px;
+            border: 2px solid #4CAF50;
+        }
+
+        .payment-url a {
+            color: #4CAF50;
+            text-decoration: none;
+            font-weight: 600;
+            word-break: break-all;
+        }
+
+        .payment-url a:hover {
+            text-decoration: underline;
+        }
+
+        .spinner {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #4CAF50;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-right: 10px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .error {
+            color: #f44336;
+            font-size: 14px;
+            margin-top: 5px;
+        }
+
+        .success {
+            color: #4CAF50;
+            font-size: 14px;
+            margin-top: 5px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🏸 DDA Sports Booking</h1>
+            <p>Automated Court Booking System</p>
+        </div>
+
+        <div class="form-container">
+            <form id="bookingForm">
+                <div class="form-group">
+                    <label for="username">Username</label>
+                    <input type="text" id="username" name="username" required>
+                </div>
+
+                <div class="form-group">
+                    <label for="password">Password</label>
+                    <input type="password" id="password" name="password" required>
+                </div>
+
+                <div class="form-group">
+                    <label for="date">Date</label>
+                    <input type="date" id="date" name="date" required>
+                </div>
+
+                <div class="form-group">
+                    <label for="courtNumber">Court Number</label>
+                    <select id="courtNumber" name="courtNumber" required>
+                        <option value="">Select Court</option>
+                        <option value="1">Court 1</option>
+                        <option value="2">Court 2</option>
+                        <option value="3">Court 3</option>
+                        <option value="4">Court 4</option>
+                        <option value="5">Court 5</option>
+                        <option value="6">Court 6</option>
+                        <option value="7">Court 7</option>
+                        <option value="8">Court 8</option>
+                        <option value="9">Court 9</option>
+                        <option value="10">Court 10</option>
+                        <option value="11">Court 11</option>
+                        <option value="12">Court 12</option>
+                        <option value="13">Court 13</option>
+                        <option value="14">Court 14</option>
+                        <option value="15">Court 15</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label for="timeSlot">Time Slot</label>
+                    <select id="timeSlot" name="timeSlot" required>
+                        <option value="19">6:40 - 7:20</option>
+                        <option value="20">7:20 - 8:00</option>
+                        <option value="21">8:00 - 8:40</option>
+                    </select>
+                </div>
+
+                <div class="checkbox-group">
+                    <input type="checkbox" id="useChromeProfile" name="useChromeProfile" checked>
+                    <label for="useChromeProfile">Use Chrome profile data</label>
+                </div>
+
+                <button type="submit" class="btn" id="submitBtn">
+                    Start Booking Process
+                </button>
+            </form>
+
+            <div id="statusContainer" class="status-container">
+                <div class="status-title" id="statusTitle"></div>
+                <div class="status-message" id="statusMessage"></div>
+                <div id="paymentUrlContainer" class="payment-url" style="display: none;">
+                    <strong>Payment URL:</strong><br>
+                    <a href="#" id="paymentUrl" target="_blank"></a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const form = document.getElementById('bookingForm');
+        const submitBtn = document.getElementById('submitBtn');
+        const statusContainer = document.getElementById('statusContainer');
+        const statusTitle = document.getElementById('statusTitle');
+        const statusMessage = document.getElementById('statusMessage');
+        const paymentUrlContainer = document.getElementById('paymentUrlContainer');
+        const paymentUrl = document.getElementById('paymentUrl');
+
+        let currentAutomationId = null;
+        let statusCheckInterval = null;
+
+        // Set default date to today
+        document.getElementById('date').valueAsDate = new Date();
+
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const formData = new FormData(form);
+            const data = {
+                username: formData.get('username'),
+                password: formData.get('password'),
+                date: formData.get('date'),
+                courtNumber: formData.get('courtNumber'),
+                timeSlot: formData.get('timeSlot'),
+                useChromeProfile: formData.get('useChromeProfile') === 'on'
+            };
+
+            try {
+                submitBtn.disabled = true;
+                submitBtn.innerHTML = '<span class="spinner"></span>Starting...';
+                
+                showStatus('running', 'Starting automation...', 'Please wait while we process your booking request.');
+
+                const response = await fetch('/api/start-booking', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(data)
+                });
+
+                const result = await response.json();
+
+                if (result.success) {
+                    currentAutomationId = result.automationId;
+                    startStatusChecking();
+                } else {
+                    throw new Error(result.error || 'Failed to start automation');
+                }
+
+            } catch (error) {
+                console.error('Error:', error);
+                showStatus('failed', 'Error', error.message);
+                resetForm();
+            }
+        });
+
+        function startStatusChecking() {
+            if (statusCheckInterval) {
+                clearInterval(statusCheckInterval);
+            }
+
+            statusCheckInterval = setInterval(async () => {
+                try {
+                    const response = await fetch(`/api/status/${currentAutomationId}`);
+                    const status = await response.json();
+
+                    if (status.status === 'completed') {
+                        clearInterval(statusCheckInterval);
+                        
+                        if (status.result && status.result.success && status.result.paymentUrl) {
+                            showStatus('completed', 'Booking Successful!', 
+                                'Your court booking has been completed successfully. Click the link below to complete payment.',
+                                status.result.paymentUrl);
+                        } else {
+                            showStatus('completed', 'Booking Completed', 
+                                'Your booking process has been completed. Please check the server for details.');
+                        }
+                        resetForm();
+                    } else if (status.status === 'failed') {
+                        clearInterval(statusCheckInterval);
+                        showStatus('failed', 'Booking Failed', 
+                            status.result?.error || 'The booking process failed. Please try again.');
+                        resetForm();
+                    } else {
+                        // Still running
+                        const duration = Math.floor(status.duration / 1000);
+                        showStatus('running', 'Processing...', 
+                            `Booking in progress... (${duration}s elapsed)`);
+                    }
+                } catch (error) {
+                    console.error('Status check error:', error);
+                }
+            }, 2000); // Check every 2 seconds
+        }
+
+        function showStatus(type, title, message, paymentUrlLink = null) {
+            statusContainer.className = `status-container show ${type}`;
+            statusTitle.textContent = title;
+            statusMessage.textContent = message;
+
+            if (paymentUrlLink) {
+                paymentUrl.href = paymentUrlLink;
+                paymentUrl.textContent = paymentUrlLink;
+                paymentUrlContainer.style.display = 'block';
+            } else {
+                paymentUrlContainer.style.display = 'none';
+            }
+        }
+
+        function resetForm() {
+            submitBtn.disabled = false;
+            submitBtn.innerHTML = 'Start Booking Process';
+        }
+    </script>
+</body>
+</html>
+
