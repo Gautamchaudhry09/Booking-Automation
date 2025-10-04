@@ -6,8 +6,11 @@
   "scripts": {
     "start": "electron .",
     "server": "node server.js",
+    "web": "node server.js",
     "precaptcha": "node -e \"const fs=require('fs'); if(!fs.existsSync('./captcha')) fs.mkdirSync('./captcha');\"",
-    "build": "npm run precaptcha && electron-packager . DDA-Sports-Booking --platform=win32 --arch=x64 --overwrite --extra-resource=automation.js"
+    "build": "npm run precaptcha && electron-packager . DDA-Sports-Booking --platform=win32 --arch=x64 --overwrite --extra-resource=automation.js",
+    "web-build": "npm run precaptcha && echo 'Web build completed - ready for deployment'",
+    "web-start": "node server.js"
   },
   "author": "Gautam",
   "license": "ISC",
