@@ -2,13 +2,34 @@ const express = require('express');
 const path = require('path');
 const { spawn } = require('child_process');
 const fs = require('fs');
+const { connectDB } = require('./db');
+const { authenticateToken, generateToken, optionalAuth } = require('./middleware/auth');
+const User = require('./models/User');
+const BookingProfile = require('./models/BookingProfile');
+const BookingHistory = require('./models/BookingHistory');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// Connect to MongoDB
+connectDB();
+
 // Middleware
 app.use(express.json());
 app.use(express.static('public'));
+
+// CORS middleware for development
+app.use((req, res, next) => {
+  res.header('Access-Control-Allow-Origin', '*');
+  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
+  
+  if (req.method === 'OPTIONS') {
+    res.sendStatus(200);
+  } else {
+    next();
+  }
+});
 
 // Store active automation processes
 const activeAutomations = new Map();
@@ -18,10 +39,405 @@ app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
-// API endpoint to start automation
-app.post('/api/start-booking', async (req, res) => {
+// ==================== AUTHENTICATION ENDPOINTS ====================
+
+// User registration
+app.post('/api/auth/register', async (req, res) => {
   try {
-    const { username, password, date, courtNumber, timeSlot, useChromeProfile } = req.body;
+    const { username, password } = req.body;
+
+    // Validation
+    if (!username || !password) {
+      return res.status(400).json({
+        success: false,
+        error: 'Username and password are required'
+      });
+    }
+
+    if (password.length < 6) {
+      return res.status(400).json({
+        success: false,
+        error: 'Password must be at least 6 characters long'
+      });
+    }
+
+    if (username.length < 3) {
+      return res.status(400).json({
+        success: false,
+        error: 'Username must be at least 3 characters long'
+      });
+    }
+
+    // Check if user already exists
+    const existingUser = await User.findOne({ username });
+
+    if (existingUser) {
+      return res.status(400).json({
+        success: false,
+        error: 'Username already exists'
+      });
+    }
+
+    // Create new user
+    const user = new User({
+      username,
+      password,
+      fullName: username // Use username as display name
+    });
+
+    await user.save();
+
+    // Generate token
+    const token = generateToken(user._id);
+
+    res.status(201).json({
+      success: true,
+      message: 'User registered successfully',
+      token,
+      user: {
+        id: user._id,
+        username: user.username,
+        email: user.email || '',
+        fullName: user.fullName
+      }
+    });
+
+  } catch (error) {
+    console.error('Registration error:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Registration failed: ' + error.message
+    });
+  }
+});
+
+// User login
+app.post('/api/auth/login', async (req, res) => {
+  try {
+    const { username, password } = req.body;
+
+    if (!username || !password) {
+      return res.status(400).json({
+        success: false,
+        error: 'Username and password are required'
+      });
+    }
+
+    // Find user by username
+    const user = await User.findOne({ username });
+
+    if (!user || !user.isActive) {
+      return res.status(401).json({
+        success: false,
+        error: 'Invalid credentials'
+      });
+    }
+
+    // Check password
+    const isPasswordValid = await user.comparePassword(password);
+    if (!isPasswordValid) {
+      return res.status(401).json({
+        success: false,
+        error: 'Invalid credentials'
+      });
+    }
+
+    // Update last login
+    await user.updateLastLogin();
+
+    // Generate token
+    const token = generateToken(user._id);
+
+    res.json({
+      success: true,
+      message: 'Login successful',
+      token,
+      user: {
+        id: user._id,
+        username: user.username,
+        email: user.email,
+        fullName: user.fullName
+      }
+    });
+
+  } catch (error) {
+    console.error('Login error:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Login failed'
+    });
+  }
+});
+
+// Get current user profile
+app.get('/api/auth/me', authenticateToken, async (req, res) => {
+  try {
+    res.json({
+      success: true,
+      user: {
+        id: req.user._id,
+        username: req.user.username,
+        email: req.user.email,
+        fullName: req.user.fullName,
+        lastLogin: req.user.lastLogin
+      }
+    });
+  } catch (error) {
+    console.error('Get user profile error:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to get user profile'
+    });
+  }
+});
+
+// ==================== BOOKING PROFILE ENDPOINTS ====================
+
+// Get all booking profiles for a user
+app.get('/api/profiles', authenticateToken, async (req, res) => {
+  try {
+    const profiles = await BookingProfile.find({ userId: req.user._id })
+      .sort({ lastUsed: -1, createdAt: -1 });
+
+    res.json({
+      success: true,
+      profiles: profiles.map(profile => ({
+        id: profile._id,
+        profileName: profile.profileName,
+        username: profile.username,
+        date: profile.date,
+        courtNumber: profile.courtNumber,
+        timeSlot: profile.timeSlot,
+        timeSlotDisplay: profile.timeSlotDisplay,
+        courtDisplay: profile.courtDisplay,
+        useChromeProfile: profile.useChromeProfile,
+        isDefault: profile.isDefault,
+        lastUsed: profile.lastUsed,
+        createdAt: profile.createdAt
+      }))
+    });
+  } catch (error) {
+    console.error('Get profiles error:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to get profiles'
+    });
+  }
+});
+
+// Create a new booking profile
+app.post('/api/profiles', authenticateToken, async (req, res) => {
+  try {
+    const { profileName, username, password, date, courtNumber, timeSlot, useChromeProfile } = req.body;
+
+    // Debug logging
+    console.log('Profile creation request:', {
+      profileName,
+      username,
+      password: password ? '[PROVIDED]' : '[MISSING]',
+      date,
+      courtNumber,
+      timeSlot,
+      useChromeProfile
+    });
+
+    // Validation with detailed error messages
+    const missingFields = [];
+    if (!profileName) missingFields.push('profileName');
+    if (!username) missingFields.push('username');
+    if (!password) missingFields.push('password');
+    if (!date) missingFields.push('date');
+    if (!courtNumber) missingFields.push('courtNumber');
+    if (!timeSlot) missingFields.push('timeSlot');
+
+    if (missingFields.length > 0) {
+      return res.status(400).json({
+        success: false,
+        error: `Missing required fields: ${missingFields.join(', ')}`
+      });
+    }
+
+    // Check if profile name already exists for this user
+    const existingProfile = await BookingProfile.findOne({
+      userId: req.user._id,
+      profileName
+    });
+
+    if (existingProfile) {
+      return res.status(400).json({
+        success: false,
+        error: 'Profile name already exists'
+      });
+    }
+
+    // Create new profile
+    const profile = new BookingProfile({
+      userId: req.user._id,
+      profileName,
+      username,
+      password,
+      date,
+      courtNumber,
+      timeSlot,
+      useChromeProfile: useChromeProfile !== false
+    });
+
+    await profile.save();
+
+    res.status(201).json({
+      success: true,
+      message: 'Profile created successfully',
+      profile: {
+        id: profile._id,
+        profileName: profile.profileName,
+        username: profile.username,
+        date: profile.date,
+        courtNumber: profile.courtNumber,
+        timeSlot: profile.timeSlot,
+        timeSlotDisplay: profile.timeSlotDisplay,
+        courtDisplay: profile.courtDisplay,
+        useChromeProfile: profile.useChromeProfile,
+        isDefault: profile.isDefault,
+        lastUsed: profile.lastUsed,
+        createdAt: profile.createdAt
+      }
+    });
+
+  } catch (error) {
+    console.error('Create profile error:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to create profile'
+    });
+  }
+});
+
+// Update a booking profile
+app.put('/api/profiles/:id', authenticateToken, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const updateData = req.body;
+
+    // Remove fields that shouldn't be updated
+    delete updateData.userId;
+    delete updateData._id;
+    delete updateData.createdAt;
+
+    const profile = await BookingProfile.findOneAndUpdate(
+      { _id: id, userId: req.user._id },
+      { ...updateData, updatedAt: new Date() },
+      { new: true, runValidators: true }
+    );
+
+    if (!profile) {
+      return res.status(404).json({
+        success: false,
+        error: 'Profile not found'
+      });
+    }
+
+    res.json({
+      success: true,
+      message: 'Profile updated successfully',
+      profile: {
+        id: profile._id,
+        profileName: profile.profileName,
+        username: profile.username,
+        date: profile.date,
+        courtNumber: profile.courtNumber,
+        timeSlot: profile.timeSlot,
+        timeSlotDisplay: profile.timeSlotDisplay,
+        courtDisplay: profile.courtDisplay,
+        useChromeProfile: profile.useChromeProfile,
+        isDefault: profile.isDefault,
+        lastUsed: profile.lastUsed,
+        createdAt: profile.createdAt
+      }
+    });
+
+  } catch (error) {
+    console.error('Update profile error:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to update profile'
+    });
+  }
+});
+
+// Delete a booking profile
+app.delete('/api/profiles/:id', authenticateToken, async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const profile = await BookingProfile.findOneAndDelete({
+      _id: id,
+      userId: req.user._id
+    });
+
+    if (!profile) {
+      return res.status(404).json({
+        success: false,
+        error: 'Profile not found'
+      });
+    }
+
+    res.json({
+      success: true,
+      message: 'Profile deleted successfully'
+    });
+
+  } catch (error) {
+    console.error('Delete profile error:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to delete profile'
+    });
+  }
+});
+
+// Set default profile
+app.patch('/api/profiles/:id/default', authenticateToken, async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    // First, unset all other default profiles for this user
+    await BookingProfile.updateMany(
+      { userId: req.user._id },
+      { isDefault: false }
+    );
+
+    // Set the selected profile as default
+    const profile = await BookingProfile.findOneAndUpdate(
+      { _id: id, userId: req.user._id },
+      { isDefault: true },
+      { new: true }
+    );
+
+    if (!profile) {
+      return res.status(404).json({
+        success: false,
+        error: 'Profile not found'
+      });
+    }
+
+    res.json({
+      success: true,
+      message: 'Default profile updated successfully'
+    });
+
+  } catch (error) {
+    console.error('Set default profile error:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to set default profile'
+    });
+  }
+});
+
+// API endpoint to start automation
+app.post('/api/start-booking', optionalAuth, async (req, res) => {
+  try {
+    const { username, password, date, courtNumber, timeSlot, useChromeProfile, profileId } = req.body;
     
     // Validate required fields
     if (!username || !password || !date || !courtNumber || !timeSlot) {
@@ -36,6 +452,32 @@ app.post('/api/start-booking', async (req, res) => {
     
     console.log(`[${automationId}] Starting automation from mobile request`);
     console.log(`[${automationId}] Details:`, { username, date, courtNumber, timeSlot });
+
+    // Create booking history record if user is authenticated
+    let bookingHistory = null;
+    if (req.user && profileId) {
+      try {
+        bookingHistory = new BookingHistory({
+          userId: req.user._id,
+          profileId: profileId,
+          automationId: automationId,
+          status: 'running',
+          bookingDetails: {
+            username,
+            date,
+            courtNumber,
+            timeSlot,
+            useChromeProfile: useChromeProfile !== false
+          }
+        });
+        await bookingHistory.save();
+
+        // Update profile last used
+        await BookingProfile.findByIdAndUpdate(profileId, { lastUsed: new Date() });
+      } catch (error) {
+        console.error('Error creating booking history:', error);
+      }
+    }
 
     // Start automation process
     const automationProcess = spawn('node', ['automation.js'], {
@@ -66,7 +508,7 @@ app.post('/api/start-booking', async (req, res) => {
     let output = '';
     let errorOutput = '';
 
-    automationProcess.stdout.on('data', (data) => {
+    automationProcess.stdout.on('data', async (data) => {
       const message = data.toString();
       output += message;
       console.log(`[${automationId}] ${message}`);
@@ -76,20 +518,37 @@ app.post('/api/start-booking', async (req, res) => {
         const urlMatch = message.match(/Payment URL: (https?:\/\/[^\s]+)/);
         if (urlMatch) {
           const paymentUrl = urlMatch[1];
-          activeAutomations.get(automationId).result = { paymentUrl, success: true };
+          const result = { paymentUrl, success: true };
+          activeAutomations.get(automationId).result = result;
           activeAutomations.get(automationId).status = 'completed';
+          
+          // Update booking history if exists
+          if (bookingHistory) {
+            await bookingHistory.markCompleted(result);
+          }
         }
       }
       
       // Check for server-specific payment URL output
       if (message.includes('PAYMENT_URL_OUTPUT:')) {
         const paymentUrl = message.replace('PAYMENT_URL_OUTPUT:', '').trim();
-        activeAutomations.get(automationId).result = { paymentUrl, success: true };
+        const result = { paymentUrl, success: true };
+        activeAutomations.get(automationId).result = result;
         activeAutomations.get(automationId).status = 'completed';
+        
+        // Update booking history if exists
+        if (bookingHistory) {
+          await bookingHistory.markCompleted(result);
+        }
       }
       
       if (message.includes('Booking process completed!')) {
         activeAutomations.get(automationId).status = 'completed';
+        
+        // Update booking history if exists
+        if (bookingHistory) {
+          await bookingHistory.markCompleted({ success: true });
+        }
       }
     });
 
@@ -99,14 +558,20 @@ app.post('/api/start-booking', async (req, res) => {
       console.error(`[${automationId}] ERROR: ${error}`);
     });
 
-    automationProcess.on('close', (code) => {
+    automationProcess.on('close', async (code) => {
       console.log(`[${automationId}] Process exited with code ${code}`);
       
       const automation = activeAutomations.get(automationId);
       if (automation) {
         automation.status = code === 0 ? 'completed' : 'failed';
         if (code !== 0) {
-          automation.result = { error: `Process failed with code ${code}`, success: false };
+          const result = { error: `Process failed with code ${code}`, success: false };
+          automation.result = result;
+          
+          // Update booking history if exists
+          if (bookingHistory) {
+            await bookingHistory.markFailed(result.error);
+          }
         }
       }
     });
@@ -124,6 +589,91 @@ app.post('/api/start-booking', async (req, res) => {
     res.status(500).json({
       error: 'Failed to start automation',
       message: error.message
+    });
+  }
+});
+
+// ==================== BOOKING HISTORY ENDPOINTS ====================
+
+// Get booking history for a user
+app.get('/api/booking-history', authenticateToken, async (req, res) => {
+  try {
+    const { page = 1, limit = 10 } = req.query;
+    const skip = (page - 1) * limit;
+
+    const history = await BookingHistory.find({ userId: req.user._id })
+      .populate('profileId', 'profileName')
+      .sort({ startedAt: -1 })
+      .skip(skip)
+      .limit(parseInt(limit));
+
+    const total = await BookingHistory.countDocuments({ userId: req.user._id });
+
+    res.json({
+      success: true,
+      history: history.map(record => ({
+        id: record._id,
+        automationId: record.automationId,
+        profileName: record.profileId?.profileName || 'Unknown Profile',
+        status: record.status,
+        bookingDetails: record.bookingDetails,
+        result: record.result,
+        startedAt: record.startedAt,
+        completedAt: record.completedAt,
+        duration: record.duration
+      })),
+      pagination: {
+        page: parseInt(page),
+        limit: parseInt(limit),
+        total,
+        pages: Math.ceil(total / limit)
+      }
+    });
+  } catch (error) {
+    console.error('Get booking history error:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to get booking history'
+    });
+  }
+});
+
+// Get booking history for a specific automation
+app.get('/api/booking-history/:automationId', authenticateToken, async (req, res) => {
+  try {
+    const { automationId } = req.params;
+
+    const record = await BookingHistory.findOne({
+      automationId,
+      userId: req.user._id
+    }).populate('profileId', 'profileName');
+
+    if (!record) {
+      return res.status(404).json({
+        success: false,
+        error: 'Booking record not found'
+      });
+    }
+
+    res.json({
+      success: true,
+      record: {
+        id: record._id,
+        automationId: record.automationId,
+        profileName: record.profileId?.profileName || 'Unknown Profile',
+        status: record.status,
+        bookingDetails: record.bookingDetails,
+        result: record.result,
+        startedAt: record.startedAt,
+        completedAt: record.completedAt,
+        duration: record.duration
+      }
+    });
+  } catch (error) {
+    console.error('Get booking record error:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to get booking record'
     });
   }
 });
