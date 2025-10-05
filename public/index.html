@@ -4,6 +4,9 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>DDA Sports Booking - Mobile</title>
+    <!-- Include Flatpickr for date picker -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
     <style>
         * {
             margin: 0;
@@ -342,6 +345,62 @@
             color: #333;
         }
 
+        /* New editable profile fields styling */
+        .profile-editable-fields {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 15px;
+            margin-top: 15px;
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 8px;
+        }
+
+        .profile-field-group {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+        }
+
+        .profile-field-group label {
+            font-size: 0.85rem;
+            font-weight: 600;
+            color: #495057;
+            margin-bottom: 2px;
+        }
+
+        .profile-inline-date,
+        .profile-court-select,
+        .profile-time-select {
+            padding: 8px 12px;
+            border: 1px solid #dee2e6;
+            border-radius: 4px;
+            font-size: 0.9rem;
+            background: white;
+            transition: border-color 0.2s;
+        }
+
+        .profile-inline-date:focus,
+        .profile-court-select:focus,
+        .profile-time-select:focus {
+            outline: none;
+            border-color: #007bff;
+            box-shadow: 0 0 0 2px rgba(0, 123, 255, 0.25);
+        }
+
+        .profile-details {
+            display: flex;
+            gap: 15px;
+            margin-top: 8px;
+            font-size: 0.9rem;
+            color: #6c757d;
+        }
+
+        .profile-username {
+            font-weight: 500;
+            color: #495057;
+        }
+
         .modal {
             display: none;
             position: fixed;
@@ -482,10 +541,74 @@
                 padding: 20px 15px;
             }
             
-            .profile-fields {
-                grid-template-columns: 1fr;
-            }
+        .profile-fields {
+            grid-template-columns: 1fr;
         }
+        
+        .profile-editable-fields {
+            grid-template-columns: 1fr;
+            gap: 10px;
+        }
+    }
+
+    .form-hint {
+        display: block;
+        color: #666;
+        font-size: 0.85rem;
+        margin-top: 0.25rem;
+        font-style: italic;
+    }
+
+    /* Date input wrapper styling */
+    .date-input-wrapper {
+        position: relative;
+        display: flex;
+        align-items: center;
+    }
+
+    .date-input-wrapper input {
+        padding-right: 40px; /* Make room for the icon */
+    }
+
+    .date-icon {
+        position: absolute;
+        right: 12px;
+        font-size: 18px;
+        pointer-events: none;
+        color: #666;
+    }
+
+    /* Date picker styling */
+    .flatpickr-input {
+        cursor: pointer;
+    }
+
+    .flatpickr-calendar {
+        font-family: inherit;
+        border-radius: 8px;
+        box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+    }
+
+    .flatpickr-day.selected {
+        background: #007bff;
+        border-color: #007bff;
+    }
+
+    .flatpickr-day:hover {
+        background: #e9ecef;
+    }
+
+    /* Mobile-specific date picker styling */
+    @media (max-width: 768px) {
+        .flatpickr-calendar {
+            font-size: 16px; /* Prevent zoom on iOS */
+        }
+        
+        .flatpickr-day {
+            height: 40px;
+            line-height: 40px;
+        }
+    }
     </style>
 </head>
 <body>
@@ -556,7 +679,11 @@
 
                 <div class="form-group">
                     <label for="date">Date</label>
-                    <input type="date" id="date" name="date" required>
+                    <div class="date-input-wrapper">
+                        <input type="text" id="date" name="date" placeholder="Click to select date" readonly required>
+                        <span class="date-icon">📅</span>
+                    </div>
+                    <small class="form-hint">Click the field to open date picker</small>
                 </div>
 
                 <div class="form-group">
@@ -674,7 +801,11 @@
                 </div>
                 <div class="form-group">
                     <label for="modalDate">Date</label>
-                    <input type="date" id="modalDate" name="modalDate" required>
+                    <div class="date-input-wrapper">
+                        <input type="text" id="modalDate" name="modalDate" placeholder="Click to select date" readonly required>
+                        <span class="date-icon">📅</span>
+                    </div>
+                    <small class="form-hint">Click the field to open date picker</small>
                 </div>
                 <div class="form-group">
                     <label for="modalCourtNumber">Court Number</label>
@@ -733,14 +864,20 @@
                 showBookingInterface();
             }
 
-            // Set default date to today
+            // Set default date to today in DD/MM/YYYY format (matching automation script)
             const today = new Date();
-            const dateString = today.toISOString().split('T')[0]; // Format: YYYY-MM-DD
+            const day = String(today.getDate()).padStart(2, '0');
+            const month = String(today.getMonth() + 1).padStart(2, '0');
+            const year = today.getFullYear();
+            const dateString = `${day}/${month}/${year}`; // Format: DD/MM/YYYY
             document.getElementById('date').value = dateString;
             document.getElementById('modalDate').value = dateString;
 
             // Initialize event listeners
             initializeEventListeners();
+            
+            // Initialize date pickers
+            initializeDatePickers();
         });
 
         function initializeEventListeners() {
@@ -755,6 +892,107 @@
             
             // Save profile form
             document.getElementById('saveProfileForm').addEventListener('submit', handleSaveProfile);
+        }
+
+        // Date validation and formatting function
+        function validateAndFormatDate(event) {
+            const input = event.target;
+            let value = input.value.trim();
+            
+            // If empty, don't validate
+            if (!value) return;
+            
+            // Check if it's in DD/MM/YYYY format
+            const dateRegex = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/;
+            const match = value.match(dateRegex);
+            
+            if (match) {
+                let day = match[1].padStart(2, '0');
+                let month = match[2].padStart(2, '0');
+                let year = match[3];
+                
+                // Validate date
+                const date = new Date(year, month - 1, day);
+                if (date.getFullYear() == year && date.getMonth() == month - 1 && date.getDate() == day) {
+                    // Format as DD/MM/YYYY
+                    input.value = `${day}/${month}/${year}`;
+                    input.setCustomValidity('');
+                } else {
+                    input.setCustomValidity('Please enter a valid date in DD/MM/YYYY format');
+                }
+            } else {
+                input.setCustomValidity('Please enter date in DD/MM/YYYY format');
+            }
+        }
+
+        // Date format validation function for form submission
+        function validateDateFormat(dateString) {
+            if (!dateString) return false;
+            
+            // Since we're using flatpickr with d/m/Y format, just check if it's not empty
+            // The date picker ensures the correct format
+            return dateString.trim().length > 0;
+        }
+
+        // Initialize date pickers
+        function initializeDatePickers() {
+            // Initialize main date picker
+            flatpickr("#date", {
+                dateFormat: "d/m/Y",
+                minDate: "today",
+                maxDate: new Date().fp_incr(30), // 30 days from today
+                disableMobile: false, // Enable on mobile
+                theme: "light",
+                allowInput: false, // Prevent manual input since it's readonly
+                onChange: function(selectedDates, dateStr) {
+                    // Ensure the date is properly formatted
+                    if (dateStr) {
+                        document.getElementById('date').value = dateStr;
+                    }
+                }
+            });
+
+            // Initialize modal date picker
+            flatpickr("#modalDate", {
+                dateFormat: "d/m/Y",
+                minDate: "today",
+                maxDate: new Date().fp_incr(30), // 30 days from today
+                disableMobile: false, // Enable on mobile
+                theme: "light",
+                allowInput: false, // Prevent manual input since it's readonly
+                onChange: function(selectedDates, dateStr) {
+                    // Ensure the date is properly formatted
+                    if (dateStr) {
+                        document.getElementById('modalDate').value = dateStr;
+                    }
+                }
+            });
+        }
+
+        // Initialize date pickers for inline profile date fields
+        function initializeInlineDatePickers() {
+            // Find all inline date inputs and initialize flatpickr for them
+            const inlineDateInputs = document.querySelectorAll('.profile-inline-date');
+            
+            inlineDateInputs.forEach(input => {
+                // Skip if already initialized
+                if (input._flatpickr) return;
+                
+                flatpickr(input, {
+                    dateFormat: "d/m/Y",
+                    minDate: "today",
+                    maxDate: new Date().fp_incr(30), // 30 days from today
+                    disableMobile: false, // Enable on mobile
+                    theme: "light",
+                    allowInput: false, // Prevent manual input since it's readonly
+                    onChange: function(selectedDates, dateStr) {
+                        // Ensure the date is properly formatted
+                        if (dateStr) {
+                            input.value = dateStr;
+                        }
+                    }
+                });
+            });
         }
 
         // Authentication functions
@@ -877,6 +1115,14 @@
         // Booking functions
         async function handleBooking(e) {
             e.preventDefault();
+            
+            // Validate date format before submission
+            const dateInput = document.getElementById('date');
+            if (!validateDateFormat(dateInput.value)) {
+                showMessage('Please enter a valid date in DD/MM/YYYY format', 'error');
+                dateInput.focus();
+                return;
+            }
             
             const formData = new FormData(e.target);
             const data = {
@@ -1109,24 +1355,58 @@
             }
 
             profilesList.innerHTML = profiles.map(profile => `
-                <div class="profile-item">
+                <div class="profile-item" data-profile-id="${profile.id}">
                     <div class="profile-header">
                         <div class="profile-name">${profile.profileName}</div>
                         <div class="profile-actions">
-                            <button class="btn btn-small" onclick="useProfile('${profile.id}')">Use</button>
+                            <button class="btn btn-small btn-primary" onclick="runProfile('${profile.id}')">Run</button>
                             <button class="btn btn-small btn-secondary" onclick="editProfile('${profile.id}')">Edit</button>
                             <button class="btn btn-small btn-danger" onclick="deleteProfile('${profile.id}')">Delete</button>
                         </div>
                     </div>
                     <div class="profile-details">
-                        ${profile.courtDisplay} • ${profile.timeSlotDisplay} • ${profile.username}
+                        <span class="profile-username">${profile.username}</span>
+                        <span class="profile-chrome">Chrome: ${profile.useChromeProfile ? 'Yes' : 'No'}</span>
                     </div>
-                    <div class="profile-fields">
-                        <div class="profile-field"><strong>Date:</strong> ${profile.date}</div>
-                        <div class="profile-field"><strong>Chrome:</strong> ${profile.useChromeProfile ? 'Yes' : 'No'}</div>
+                    <div class="profile-editable-fields">
+                        <div class="profile-field-group">
+                            <label>Date:</label>
+                            <input type="text" class="profile-inline-date" data-profile="${profile.id}" data-field="date" value="${profile.date}" placeholder="DD/MM/YYYY">
+                        </div>
+                        <div class="profile-field-group">
+                            <label>Court:</label>
+                            <select class="profile-court-select" data-profile="${profile.id}" data-field="courtNumber">
+                                <option value="1" ${profile.courtNumber === '1' ? 'selected' : ''}>Court 1</option>
+                                <option value="2" ${profile.courtNumber === '2' ? 'selected' : ''}>Court 2</option>
+                                <option value="3" ${profile.courtNumber === '3' ? 'selected' : ''}>Court 3</option>
+                                <option value="4" ${profile.courtNumber === '4' ? 'selected' : ''}>Court 4</option>
+                                <option value="5" ${profile.courtNumber === '5' ? 'selected' : ''}>Court 5</option>
+                                <option value="6" ${profile.courtNumber === '6' ? 'selected' : ''}>Court 6</option>
+                                <option value="7" ${profile.courtNumber === '7' ? 'selected' : ''}>Court 7</option>
+                                <option value="8" ${profile.courtNumber === '8' ? 'selected' : ''}>Court 8</option>
+                                <option value="9" ${profile.courtNumber === '9' ? 'selected' : ''}>Court 9</option>
+                                <option value="10" ${profile.courtNumber === '10' ? 'selected' : ''}>Court 10</option>
+                                <option value="11" ${profile.courtNumber === '11' ? 'selected' : ''}>Court 11</option>
+                                <option value="12" ${profile.courtNumber === '12' ? 'selected' : ''}>Court 12</option>
+                                <option value="13" ${profile.courtNumber === '13' ? 'selected' : ''}>Court 13</option>
+                                <option value="14" ${profile.courtNumber === '14' ? 'selected' : ''}>Court 14</option>
+                                <option value="15" ${profile.courtNumber === '15' ? 'selected' : ''}>Court 15</option>
+                            </select>
+                        </div>
+                        <div class="profile-field-group">
+                            <label>Time:</label>
+                            <select class="profile-time-select" data-profile="${profile.id}" data-field="timeSlot">
+                                <option value="19" ${profile.timeSlot === '19' ? 'selected' : ''}>6:40 - 7:20</option>
+                                <option value="20" ${profile.timeSlot === '20' ? 'selected' : ''}>7:20 - 8:00</option>
+                                <option value="21" ${profile.timeSlot === '21' ? 'selected' : ''}>8:00 - 8:40</option>
+                            </select>
+                        </div>
                     </div>
                 </div>
             `).join('');
+            
+            // Initialize date pickers for inline date fields
+            initializeInlineDatePickers();
         }
 
         async function useProfile(profileId) {
@@ -1141,23 +1421,178 @@
 
                 const result = await response.json();
 
+                // Debug: Log the full response
+                console.log('Full API response:', result);
+
                 if (result.success) {
                     const profile = result.profiles.find(p => p.id === profileId);
+                    
+                    // Debug: Log the found profile
+                    console.log('Found profile:', profile);
                     if (profile) {
+                        // Debug logging
+                        console.log('Loading profile:', {
+                            id: profile.id,
+                            profileName: profile.profileName,
+                            username: profile.username,
+                            password: profile.password ? '[PROVIDED]' : '[MISSING]',
+                            date: profile.date,
+                            courtNumber: profile.courtNumber,
+                            timeSlot: profile.timeSlot,
+                            useChromeProfile: profile.useChromeProfile
+                        });
+
                         // Fill the form with profile data
-                        document.getElementById('username').value = profile.username;
-                        document.getElementById('password').value = profile.password;
-                        document.getElementById('date').value = profile.date;
-                        document.getElementById('courtNumber').value = profile.courtNumber;
-                        document.getElementById('timeSlot').value = profile.timeSlot;
-                        document.getElementById('useChromeProfile').checked = profile.useChromeProfile;
+                        document.getElementById('username').value = profile.username || '';
+                        document.getElementById('password').value = profile.password || '';
+                        
+                        // Set date in both the input and the date picker
+                        if (profile.date) {
+                            document.getElementById('date').value = profile.date;
+                            // Update the flatpickr instance if it exists
+                            const datePicker = document.getElementById('date')._flatpickr;
+                            if (datePicker) {
+                                datePicker.setDate(profile.date, false);
+                            }
+                        }
+                        
+                        document.getElementById('courtNumber').value = profile.courtNumber || '';
+                        document.getElementById('timeSlot').value = profile.timeSlot || '';
+                        document.getElementById('useChromeProfile').checked = profile.useChromeProfile || false;
                         
                         showMessage('Profile loaded successfully!', 'success');
+                    } else {
+                        console.error('Profile not found with ID:', profileId);
+                        showMessage('Profile not found', 'error');
                     }
+                } else {
+                    console.error('Failed to load profiles:', result.error);
+                    showMessage('Failed to load profiles', 'error');
                 }
             } catch (error) {
                 console.error('Error using profile:', error);
                 showMessage('Failed to load profile', 'error');
+            }
+        }
+
+        // New function to run profile with current values
+        async function runProfile(profileId) {
+            if (!authToken) {
+                showMessage('Please login to run profiles', 'error');
+                return;
+            }
+
+            try {
+                // Get the profile data from the editable fields
+                const profileElement = document.querySelector(`[data-profile-id="${profileId}"]`);
+                if (!profileElement) {
+                    showMessage('Profile not found', 'error');
+                    return;
+                }
+
+                const dateInput = profileElement.querySelector('.profile-inline-date');
+                const courtSelect = profileElement.querySelector('.profile-court-select');
+                const timeSelect = profileElement.querySelector('.profile-time-select');
+
+                // Validate date format
+                if (!validateDateFormat(dateInput.value)) {
+                    showMessage('Please enter a valid date in DD/MM/YYYY format', 'error');
+                    dateInput.focus();
+                    return;
+                }
+
+                // Get profile data from server to get username and password
+                const response = await fetch('/api/profiles', {
+                    headers: {
+                        'Authorization': `Bearer ${authToken}`
+                    }
+                });
+
+                const result = await response.json();
+                if (!result.success) {
+                    showMessage('Failed to load profile data', 'error');
+                    return;
+                }
+
+                const profile = result.profiles.find(p => p.id === profileId);
+                if (!profile) {
+                    showMessage('Profile not found', 'error');
+                    return;
+                }
+
+                // Prepare booking data with current field values
+                const bookingData = {
+                    username: profile.username,
+                    password: profile.password,
+                    date: dateInput.value,
+                    courtNumber: courtSelect.value,
+                    timeSlot: timeSelect.value,
+                    useChromeProfile: profile.useChromeProfile,
+                    profileId: profileId
+                };
+
+                // Debug logging
+                console.log('Starting booking with data:', {
+                    username: bookingData.username,
+                    password: bookingData.password ? '[PROVIDED]' : '[MISSING]',
+                    date: bookingData.date,
+                    courtNumber: bookingData.courtNumber,
+                    timeSlot: bookingData.timeSlot,
+                    useChromeProfile: bookingData.useChromeProfile,
+                    profileId: bookingData.profileId
+                });
+
+                // Start the booking process
+                await startBookingWithData(bookingData);
+
+            } catch (error) {
+                console.error('Error running profile:', error);
+                showMessage('Failed to run profile', 'error');
+            }
+        }
+
+        // Function to start booking with provided data
+        async function startBookingWithData(data) {
+            try {
+                // Show loading message
+                showMessage('Starting booking process...', 'info');
+
+                const response = await fetch('/api/start-booking', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${authToken}`
+                    },
+                    body: JSON.stringify(data)
+                });
+
+                // Debug: Log response status
+                console.log('Response status:', response.status);
+                console.log('Response ok:', response.ok);
+
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    console.error('Response not ok:', errorText);
+                    showMessage(`Server error: ${response.status} - ${errorText}`, 'error');
+                    return;
+                }
+
+                const result = await response.json();
+                console.log('Server response:', result);
+
+                if (result.success) {
+                    currentAutomationId = result.automationId;
+                    showMessage('Booking process started successfully!', 'success');
+                    
+                    // Start status checking
+                    startStatusChecking();
+                } else {
+                    console.error('Booking error:', result);
+                    showMessage(result.error || 'Failed to start booking', 'error');
+                }
+            } catch (error) {
+                console.error('Error starting booking:', error);
+                showMessage('Failed to start booking: ' + error.message, 'error');
             }
         }
 
@@ -1187,9 +1622,9 @@
             }
         }
 
-        function editProfile(profileId) {
-            // For now, just load the profile into the form for editing
-            useProfile(profileId);
+        async function editProfile(profileId) {
+            // Load the profile into the main form for editing
+            await useProfile(profileId);
             showMessage('Profile loaded for editing. Make changes and save as new profile.', 'info');
         }
 
@@ -1202,6 +1637,14 @@
             const profileName = document.getElementById('profileName').value.trim();
             if (!profileName) {
                 showMessage('Please enter a profile name', 'error');
+                return;
+            }
+
+            // Validate date format before saving profile
+            const dateInput = document.getElementById('date');
+            if (!validateDateFormat(dateInput.value)) {
+                showMessage('Please enter a valid date in DD/MM/YYYY format', 'error');
+                dateInput.focus();
                 return;
             }
 
@@ -1264,7 +1707,18 @@
             const formData = new FormData(document.getElementById('bookingForm'));
             document.getElementById('modalUsername').value = formData.get('username');
             document.getElementById('modalPassword').value = formData.get('password');
-            document.getElementById('modalDate').value = formData.get('date');
+            
+            // Set date in both the input and the date picker
+            const dateValue = formData.get('date');
+            if (dateValue) {
+                document.getElementById('modalDate').value = dateValue;
+                // Update the flatpickr instance if it exists
+                const modalDatePicker = document.getElementById('modalDate')._flatpickr;
+                if (modalDatePicker) {
+                    modalDatePicker.setDate(dateValue, false);
+                }
+            }
+            
             document.getElementById('modalCourtNumber').value = formData.get('courtNumber');
             document.getElementById('modalTimeSlot').value = formData.get('timeSlot');
             document.getElementById('modalUseChromeProfile').checked = formData.get('useChromeProfile') === 'on';
@@ -1277,6 +1731,14 @@
             
             if (!authToken) {
                 showMessage('Please login to save profiles', 'error');
+                return;
+            }
+
+            // Validate date format before saving profile
+            const modalDateInput = document.getElementById('modalDate');
+            if (!validateDateFormat(modalDateInput.value)) {
+                showMessage('Please enter a valid date in DD/MM/YYYY format', 'error');
+                modalDateInput.focus();
                 return;
             }
 

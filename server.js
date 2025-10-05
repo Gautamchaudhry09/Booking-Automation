@@ -193,28 +193,74 @@ app.get('/api/auth/me', authenticateToken, async (req, res) => {
 
 // ==================== BOOKING PROFILE ENDPOINTS ====================
 
+// Test endpoint to check password field
+app.get('/api/test-profile/:id', authenticateToken, async (req, res) => {
+  try {
+    const profile = await BookingProfile.findById(req.params.id).select('+password');
+    if (!profile) {
+      return res.status(404).json({ success: false, error: 'Profile not found' });
+    }
+    
+    res.json({
+      success: true,
+      profile: {
+        id: profile._id,
+        profileName: profile.profileName,
+        username: profile.username,
+        password: profile.password,
+        hasPassword: !!profile.password
+      }
+    });
+  } catch (error) {
+    console.error('Test profile error:', error);
+    res.status(500).json({ success: false, error: 'Failed to get test profile' });
+  }
+});
+
 // Get all booking profiles for a user
 app.get('/api/profiles', authenticateToken, async (req, res) => {
   try {
     const profiles = await BookingProfile.find({ userId: req.user._id })
+      .select('+password') // Explicitly include password field
       .sort({ lastUsed: -1, createdAt: -1 });
+
+    // Debug logging to see what we're getting from the database
+    console.log('Raw profiles from database:', profiles.map(p => ({
+      id: p._id,
+      profileName: p.profileName,
+      username: p.username,
+      password: p.password ? '[PROVIDED]' : '[MISSING]',
+      date: p.date
+    })));
+
+    const mappedProfiles = profiles.map(profile => ({
+      id: profile._id,
+      profileName: profile.profileName,
+      username: profile.username,
+      password: profile.password, // Include password for profile loading
+      date: profile.date,
+      courtNumber: profile.courtNumber,
+      timeSlot: profile.timeSlot,
+      timeSlotDisplay: profile.timeSlotDisplay,
+      courtDisplay: profile.courtDisplay,
+      useChromeProfile: profile.useChromeProfile,
+      isDefault: profile.isDefault,
+      lastUsed: profile.lastUsed,
+      createdAt: profile.createdAt
+    }));
+
+    // Debug logging to see what we're sending
+    console.log('Mapped profiles being sent:', mappedProfiles.map(p => ({
+      id: p.id,
+      profileName: p.profileName,
+      username: p.username,
+      password: p.password ? '[PROVIDED]' : '[MISSING]',
+      date: p.date
+    })));
 
     res.json({
       success: true,
-      profiles: profiles.map(profile => ({
-        id: profile._id,
-        profileName: profile.profileName,
-        username: profile.username,
-        date: profile.date,
-        courtNumber: profile.courtNumber,
-        timeSlot: profile.timeSlot,
-        timeSlotDisplay: profile.timeSlotDisplay,
-        courtDisplay: profile.courtDisplay,
-        useChromeProfile: profile.useChromeProfile,
-        isDefault: profile.isDefault,
-        lastUsed: profile.lastUsed,
-        createdAt: profile.createdAt
-      }))
+      profiles: mappedProfiles
     });
   } catch (error) {
     console.error('Get profiles error:', error);
@@ -283,6 +329,9 @@ app.post('/api/profiles', authenticateToken, async (req, res) => {
     });
 
     await profile.save();
+
+    // Debug: Check if password was saved
+    console.log('Profile saved with password:', profile.password ? '[PROVIDED]' : '[MISSING]');
 
     res.status(201).json({
       success: true,
