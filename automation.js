@@ -347,11 +347,7 @@ async function getFinalCaptchaPath(page, automationId) {
   return finalCaptchaPath;
 }
 
-async function confirmBooking(
-  page,
-  automationId,
-  maxRetries = 4,
-) {
+async function confirmBooking(page, automationId, maxRetries = 4) {
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
       console.log(
@@ -391,6 +387,8 @@ async function confirmBooking(
           // Get new captcha and solve it
           await enterFinalCaptcha(page, captchaImagePath, 0);
 
+          console.log(`[${automationId}] Saving booking...`);
+          await Promise.all([page.click("#MainContent_btnSave")]);
           // Continue to next attempt
           continue;
         } else {
@@ -674,10 +672,7 @@ async function main() {
     ]);
 
     console.log(`[${automationId}] Saving booking...`);
-    await Promise.all([
-      page.click("#MainContent_btnSave"),
-      // page.waitForNavigation({ waitUntil: "networkidle0", timeout: 300000 }),
-    ]);
+    await Promise.all([page.click("#MainContent_btnSave")]);
 
     // Confirm booking with retry logic for captcha errors
     await confirmBooking(page, automationId);
