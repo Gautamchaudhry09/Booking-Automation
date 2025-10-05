@@ -204,6 +204,99 @@
             display: block;
         }
 
+        /* Enhanced auth container styling */
+        .auth-container {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-radius: var(--border-radius);
+            padding: 40px;
+            box-shadow: var(--shadow-medium);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .auth-container::before {
+            content: '';
+            position: absolute;
+            top: -50%;
+            left: -50%;
+            width: 200%;
+            height: 200%;
+            background: linear-gradient(45deg, transparent, rgba(255, 255, 255, 0.1), transparent);
+            transform: rotate(45deg);
+            animation: shimmer 3s infinite;
+        }
+
+        .auth-container .tabs {
+            background: rgba(255, 255, 255, 0.2);
+            backdrop-filter: blur(10px);
+            border-radius: var(--border-radius-small);
+            margin-bottom: 30px;
+            border: 1px solid rgba(255, 255, 255, 0.3);
+        }
+
+        .auth-container .tab {
+            color: rgba(255, 255, 255, 0.8);
+            font-weight: 600;
+        }
+
+        .auth-container .tab.active {
+            background: rgba(255, 255, 255, 0.3);
+            color: white;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+        }
+
+        .auth-container .tab::after {
+            background: linear-gradient(90deg, rgba(255, 255, 255, 0.8), rgba(255, 255, 255, 0.4));
+        }
+
+        .auth-container .form-group label {
+            color: rgba(255, 255, 255, 0.9);
+            font-weight: 600;
+        }
+
+        .auth-container .form-group input {
+            background: rgba(255, 255, 255, 0.95);
+            border: 2px solid rgba(255, 255, 255, 0.3);
+            color: var(--text-primary);
+        }
+
+        .auth-container .form-group input:focus {
+            border-color: rgba(255, 255, 255, 0.8);
+            box-shadow: 0 0 0 4px rgba(255, 255, 255, 0.2);
+            background: white;
+        }
+
+        .auth-container .btn {
+            background: linear-gradient(135deg, rgba(255, 255, 255, 0.9) 0%, rgba(255, 255, 255, 0.7) 100%);
+            color: #667eea;
+            font-weight: 700;
+            border: 2px solid rgba(255, 255, 255, 0.5);
+        }
+
+        .auth-container .btn:hover {
+            background: white;
+            color: #667eea;
+            transform: translateY(-3px);
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2);
+        }
+
+        .auth-container .message {
+            background: rgba(255, 255, 255, 0.2);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            color: white;
+            backdrop-filter: blur(10px);
+        }
+
+        .auth-container .message.success {
+            background: rgba(76, 175, 80, 0.3);
+            border-color: rgba(76, 175, 80, 0.5);
+        }
+
+        .auth-container .message.error {
+            background: rgba(244, 67, 54, 0.3);
+            border-color: rgba(244, 67, 54, 0.5);
+        }
+
         .booking-container {
             display: none;
         }
@@ -698,6 +791,45 @@
             border-radius: 8px;
         }
 
+        /* Mobile responsive for profile fields */
+        @media (max-width: 768px) {
+            .profile-editable-fields {
+                grid-template-columns: 1fr;
+                gap: 12px;
+                padding: 12px;
+            }
+            
+            .profile-field-group {
+                width: 100%;
+            }
+            
+            .profile-inline-date,
+            .profile-court-select,
+            .profile-time-select {
+                width: 100%;
+                min-width: 0;
+                box-sizing: border-box;
+            }
+        }
+
+        @media (max-width: 480px) {
+            .profile-editable-fields {
+                padding: 10px;
+                gap: 10px;
+            }
+            
+            .profile-field-group label {
+                font-size: 0.8rem;
+            }
+            
+            .profile-inline-date,
+            .profile-court-select,
+            .profile-time-select {
+                padding: 8px 10px;
+                font-size: 0.85rem;
+            }
+        }
+
         .profile-field-group {
             display: flex;
             flex-direction: column;
@@ -892,10 +1024,6 @@
                 grid-template-columns: 1fr;
             }
         
-        .profile-editable-fields {
-            grid-template-columns: 1fr;
-            gap: 10px;
-        }
     }
 
     .form-hint {
