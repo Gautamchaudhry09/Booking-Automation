@@ -240,7 +240,7 @@ async function waitForAndSelectCourt(page, courtNumber, timeSlot) {
       // Wait for a short time to see if the element appears
       const courtSelector = await page.waitForSelector(
         `#MainContent_grdGameSlot_ddlCourtTable_${timeSlot}`,
-        { timeout: 1500 } // 1.5s second timeout
+        { timeout: 1000 } // 1.5s second timeout
       );
 
       if (courtSelector) {
@@ -266,6 +266,15 @@ async function waitForAndSelectCourt(page, courtNumber, timeSlot) {
         `[${automationId}] Court selection not available yet, retrying...`,
         error.message
       );
+      // Press Tab twice with 300ms gap, then Enter
+      await new Promise((resolve) => setTimeout(resolve, 300)); // Wait 1s
+      await page.keyboard.press("Tab");
+      await new Promise((resolve) => setTimeout(resolve, 300)); // Wait 1s
+      await page.keyboard.press("Tab");
+      await new Promise((resolve) => setTimeout(resolve, 300)); // Wait 1s
+      await page.keyboard.press("Enter");
+      await new Promise((resolve) => setTimeout(resolve, 300)); // Wait 1s
+
       continue; // Continue the loop
     }
   }
